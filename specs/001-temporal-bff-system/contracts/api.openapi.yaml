@@ -1,0 +1,589 @@
+openapi: 3.0.3
+info:
+  title: Temporal Release Management API
+  description: |
+    BFF API for querying Temporal workflow state to display deployment release hierarchies.
+
+    ## Entity Hierarchy
+
+    Release → Wave → Cluster → Bundle → App
+
+    ## Authentication
+
+    All endpoints (except /auth/*) require JWT authentication via Bearer token.
+
+    ## Rate Limiting
+
+    No rate limiting in initial version.
+  version: 1.0.0
+  contact:
+    name: API Support
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+  - url: https://api.example.com/api
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Authentication
+    description: User authentication and token management
+  - name: Releases
+    description: Release list and detail operations
+  - name: Entities
+    description: Individual entity queries
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and return JWT access token
+      security: []  # No auth required for login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  format: email
+                  description: User email address
+                password:
+                  type: string
+                  format: password
+                  description: User password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user
+      description: Return currently authenticated user information
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /releases:
+    get:
+      tags:
+        - Releases
+      summary: List all releases
+      description: Return list of all releases tracked by workflows
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Number of releases per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of releases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Release'
+                  total:
+                    type: integer
+                    description: Total number of releases
+                  page:
+                    type: integer
+                    description: Current page number
+                  page_size:
+                    type: integer
+                    description: Page size
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /releases/{release_id}:
+    get:
+      tags:
+        - Releases
+      summary: Get release details
+      description: Return specific release by ID without full hierarchy
+      parameters:
+        - name: release_id
+          in: path
+          required: true
+          description: Release ID (format release:id)
+          schema:
+            type: string
+            pattern: '^release:[a-zA-Z0-9_-]+$'
+          example: 'release:rel-2025-01'
+      responses:
+        '200':
+          description: Release details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Release'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /releases/{release_id}/hierarchy:
+    get:
+      tags:
+        - Releases
+      summary: Get full release hierarchy
+      description: Return complete entity hierarchy for a release (all waves, clusters, bundles, apps)
+      parameters:
+        - name: release_id
+          in: path
+          required: true
+          description: Release ID (format release:id)
+          schema:
+            type: string
+            pattern: '^release:[a-zA-Z0-9_-]+$'
+          example: 'release:rel-2025-01'
+      responses:
+        '200':
+          description: Complete release hierarchy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseHierarchy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /entities/{entity_id}:
+    get:
+      tags:
+        - Entities
+      summary: Get entity by ID
+      description: Query individual entity state (Wave, Cluster, Bundle, or App) by its ID
+      parameters:
+        - name: entity_id
+          in: path
+          required: true
+          description: Entity ID (format {type}:id)
+          schema:
+            type: string
+            pattern: '^(wave|cluster|bundle|app):[a-zA-Z0-9_-]+$'
+          examples:
+            wave:
+              value: 'wave:wave-1'
+            cluster:
+              value: 'cluster:us-west'
+            bundle:
+              value: 'bundle:web-services'
+            app:
+              value: 'app:api-gateway'
+      responses:
+        '200':
+          description: Entity details
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Wave'
+                  - $ref: '#/components/schemas/Cluster'
+                  - $ref: '#/components/schemas/Bundle'
+                  - $ref: '#/components/schemas/App'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Release:
+      type: object
+      required:
+        - id
+        - state
+        - workflow_id
+      properties:
+        id:
+          type: string
+          pattern: '^release:[a-zA-Z0-9_-]+$'
+          example: 'release:rel-2025-01'
+        state:
+          type: string
+          maxLength: 50
+          example: 'in_progress'
+        workflow_id:
+          type: string
+          example: 'wf_release_2025_01_abc123'
+        created_at:
+          type: string
+          format: date-time
+          example: '2025-11-06T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2025-11-06T10:30:00Z'
+        wave_ids:
+          type: array
+          items:
+            type: string
+            pattern: '^wave:[a-zA-Z0-9_-]+$'
+          example: ['wave:wave-1', 'wave:wave-2']
+
+    Wave:
+      type: object
+      required:
+        - id
+        - state
+        - release_id
+      properties:
+        id:
+          type: string
+          pattern: '^wave:[a-zA-Z0-9_-]+$'
+          example: 'wave:wave-1'
+        state:
+          type: string
+          maxLength: 50
+          example: 'deploying'
+        release_id:
+          type: string
+          pattern: '^release:[a-zA-Z0-9_-]+$'
+          example: 'release:rel-2025-01'
+        sequence:
+          type: integer
+          description: Wave sequence number
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        cluster_ids:
+          type: array
+          items:
+            type: string
+            pattern: '^cluster:[a-zA-Z0-9_-]+$'
+
+    Cluster:
+      type: object
+      required:
+        - id
+        - state
+        - wave_id
+      properties:
+        id:
+          type: string
+          pattern: '^cluster:[a-zA-Z0-9_-]+$'
+          example: 'cluster:us-west'
+        state:
+          type: string
+          maxLength: 50
+          example: 'deploying'
+        wave_id:
+          type: string
+          pattern: '^wave:[a-zA-Z0-9_-]+$'
+        name:
+          type: string
+          description: Human-readable cluster name
+          example: 'US West Production'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        bundle_ids:
+          type: array
+          items:
+            type: string
+            pattern: '^bundle:[a-zA-Z0-9_-]+$'
+
+    Bundle:
+      type: object
+      required:
+        - id
+        - state
+        - cluster_id
+      properties:
+        id:
+          type: string
+          pattern: '^bundle:[a-zA-Z0-9_-]+$'
+          example: 'bundle:web-services'
+        state:
+          type: string
+          maxLength: 50
+          example: 'deploying'
+        cluster_id:
+          type: string
+          pattern: '^cluster:[a-zA-Z0-9_-]+$'
+        name:
+          type: string
+          description: Human-readable bundle name
+          example: 'Web Services Bundle'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        app_ids:
+          type: array
+          items:
+            type: string
+            pattern: '^app:[a-zA-Z0-9_-]+$'
+
+    App:
+      type: object
+      required:
+        - id
+        - state
+        - bundle_id
+      properties:
+        id:
+          type: string
+          pattern: '^app:[a-zA-Z0-9_-]+$'
+          example: 'app:api-gateway'
+        state:
+          type: string
+          maxLength: 50
+          example: 'running'
+        bundle_id:
+          type: string
+          pattern: '^bundle:[a-zA-Z0-9_-]+$'
+        name:
+          type: string
+          description: Human-readable app name
+          example: 'API Gateway Service'
+        version:
+          type: string
+          description: App version being deployed
+          example: 'v2.5.3'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ReleaseHierarchy:
+      type: object
+      required:
+        - release
+        - waves
+      properties:
+        release:
+          $ref: '#/components/schemas/Release'
+        waves:
+          type: array
+          items:
+            type: object
+            required:
+              - wave
+              - clusters
+            properties:
+              wave:
+                $ref: '#/components/schemas/Wave'
+              clusters:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - cluster
+                    - bundles
+                  properties:
+                    cluster:
+                      $ref: '#/components/schemas/Cluster'
+                    bundles:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - bundle
+                          - apps
+                        properties:
+                          bundle:
+                            $ref: '#/components/schemas/Bundle'
+                          apps:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/App'
+
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - is_active
+        - is_admin
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: '550e8400-e29b-41d4-a716-446655440000'
+        email:
+          type: string
+          format: email
+          example: 'user@example.com'
+        full_name:
+          type: string
+          example: 'Jane Doe'
+        is_active:
+          type: boolean
+          example: true
+        is_admin:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+
+    Token:
+      type: object
+      required:
+        - access_token
+        - token_type
+      properties:
+        access_token:
+          type: string
+          description: JWT token
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+        token_type:
+          type: string
+          example: 'bearer'
+        expires_in:
+          type: integer
+          description: Token expiration in seconds
+          example: 1800
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: 'Resource not found'
+
+    ValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Error location (path in request)
+              msg:
+                type: string
+                description: Error message
+              type:
+                type: string
+                description: Error type
+
+  responses:
+    Unauthorized:
+      description: Not authenticated or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: 'Not authenticated'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: 'Release not found: release:rel-999. It may have been completed or removed.'
+
+    ValidationError:
+      description: Request validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    ServiceUnavailable:
+      description: Unable to query Temporal workflows
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: 'Unable to query workflow state. Please try again later.'
