@@ -47,6 +47,7 @@ class Token(BaseModel):
     access_token: str = Field(..., description="JWT access token")
     token_type: str = Field("bearer", description="Token type (always 'bearer')")
     expires_in: int = Field(..., description="Token expiration time in seconds")
+    refresh_token: Optional[str] = Field(None, description="JWT refresh token for token rotation")
 
     model_config = {
         "json_schema_extra": {
@@ -54,6 +55,7 @@ class Token(BaseModel):
                 "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                 "token_type": "bearer",
                 "expires_in": 1800,
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
             }
         }
     }
@@ -64,3 +66,9 @@ class TokenData(BaseModel):
 
     email: Optional[str] = None
     user_id: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request model for token refresh."""
+
+    refresh_token: str = Field(..., description="Refresh token to exchange for new access token")

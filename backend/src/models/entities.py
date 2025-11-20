@@ -299,9 +299,6 @@ class ReleaseHierarchy(BaseModel):
 
     model_config = {
         "extra": "allow",  # Allow additional fields from workflow
-    }
-
-    model_config = {
         "json_schema_extra": {
             "example": {
                 "release": {

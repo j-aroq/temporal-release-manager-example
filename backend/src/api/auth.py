@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-from ..models.auth import Token, User, TokenData
+from ..models.auth import Token, User, TokenData, RefreshTokenRequest
 from ..services.auth_service import get_auth_service, AuthService, AuthenticationError, UserNotFoundError
 from ..core.security import verify_access_token
 
@@ -127,3 +127,38 @@ async def get_current_user_info(
         Current user information
     """
     return current_user
+
+
+@router.post("/auth/refresh", response_model=Token)
+async def refresh_token(
+    request: RefreshTokenRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> Token:
+    """
+    Refresh access token using refresh token.
+
+    Exchanges a valid refresh token for a new access token and refresh token.
+    This allows users to stay logged in without re-entering credentials.
+
+    Args:
+        request: Request containing refresh token
+        auth_service: Authentication service instance
+
+    Returns:
+        New token response with access_token and refresh_token
+
+    Raises:
+        HTTPException: If refresh token is invalid (401)
+    """
+    try:
+        token = auth_service.refresh_user_token(request.refresh_token)
+        logger.info("Token refreshed successfully")
+        return token
+
+    except AuthenticationError as e:
+        logger.warning(f"Token refresh failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

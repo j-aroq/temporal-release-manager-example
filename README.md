@@ -33,10 +33,15 @@ cd frontend && npm start
 cd backend && source venv/bin/activate && python worker.py
 
 # Terminal 5: Create Test Data
-cd backend && source venv/bin/activate && python test_workflows.py
+cd backend && source venv/bin/activate && python create_test_releases.py
 ```
 
 Then open http://localhost:3000 and login with `admin@example.com` / `admin123`!
+
+**Want to see realistic deployments?** Run the demo script for 1-5 minute releases:
+```bash
+cd backend && python demo_releases.py
+```
 
 ### Prerequisites
 
@@ -164,12 +169,25 @@ All entities use the format: `{entity-type}:{id}`
 
 ## Key Features
 
+### Core Functionality
 - ✅ **JWT Authentication** - Secure access to release information
-- ✅ **Release List View** - Browse all active releases
-- ✅ **Release Detail View** - Drill down into complete entity hierarchy
+- ✅ **Release List View** - Browse all active releases with state badges
+- ✅ **Release Detail View** - Drill down into complete entity hierarchy with auto-refresh
 - ✅ **REST API** - Programmatic access to release and entity states
-- ✅ **Real-time Updates** - Automatic polling for state changes (configurable)
+- ✅ **Real-time Updates** - Auto-refresh every 10 seconds (toggleable)
 - ✅ **Temporal Integration** - Direct queries to workflow state (no separate database)
+
+### Architecture Highlights
+- ✅ **Unified Workflow** - Single workflow manages entire hierarchy (1 workflow instead of 24+)
+- ✅ **Parallel Execution** - Clusters deploy in parallel for 2x speed improvement
+- ✅ **Terminal State Detection** - Detects terminated/cancelled workflows automatically
+- ✅ **Comprehensive State Tracking** - completed, failed, terminated, cancelled, in_progress
+- ✅ **Consistent State Model** - All entities use same state progression
+
+### Testing & Demos
+- ✅ **Quick Test Script** - Generate test releases in ~10-30 seconds
+- ✅ **Realistic Demo Script** - 1-5 minute deployments with different outcomes
+- ✅ **Unique IDs** - Timestamp-based IDs prevent workflow conflicts
 
 ## User Stories
 
@@ -181,13 +199,95 @@ All entities use the format: `{entity-type}:{id}`
 
 ## Architecture
 
+### System Architecture
+
+```mermaid
+graph TB
+    Browser[Browser / React UI]
+    API[FastAPI Backend / BFF]
+    Temporal[Temporal Server]
+    Workflows[Release Workflows]
+
+    Browser -->|HTTP/REST| API
+    API -->|Query State| Temporal
+    Temporal -->|Manage| Workflows
+    Workflows -->|State Updates| Temporal
+
+    style Browser fill:#61dafb
+    style API fill:#009688
+    style Temporal fill:#00d4aa
+    style Workflows fill:#ff6b6b
+```
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant BFF as FastAPI BFF
+    participant Auth as Auth Service
+    participant Cache
+    participant Temporal
+    participant Workflow
+
+    User->>Frontend: Login
+    Frontend->>BFF: POST /auth/login
+    BFF->>Auth: Authenticate
+    Auth-->>BFF: JWT + Refresh Token
+    BFF-->>Frontend: Access Token
+
+    User->>Frontend: View Releases
+    Frontend->>BFF: GET /releases (with JWT)
+    BFF->>Cache: Check Cache
+    alt Cache Hit
+        Cache-->>BFF: Cached Release IDs
+    else Cache Miss
+        BFF->>Temporal: List Workflows
+        Temporal-->>BFF: Workflow IDs
+        BFF->>Cache: Store (10s TTL)
+    end
+
+    BFF->>Temporal: Query Release State
+    Temporal->>Workflow: Execute Query Handler
+    Workflow-->>Temporal: Release State
+    Temporal-->>BFF: Release Data
+    BFF-->>Frontend: JSON Response
+    Frontend-->>User: Display Releases
+```
+
+### Unified Workflow Model
+
+**Before**: Each entity was a separate workflow (24 workflows for 1 release!)
+**After**: Single workflow manages entire hierarchy (1 workflow per release)
+
+```
+ReleaseWorkflow (single workflow)
+  ├── Release state
+  ├── Waves (sequential)
+  │   ├── Cluster 1 ──┐
+  │   ├── Cluster 2 ──┼─ PARALLEL (2x speed)
+  │   └── Cluster 3 ──┘
+  │       └── Bundle
+  │           ├── App 1 ──┐
+  │           ├── App 2 ──┼─ SEQUENTIAL
+  │           └── App 3 ──┘
+  └── All entity state in workflow memory
+```
+
+**Benefits**:
+- 🚀 **2x faster** - Parallel cluster execution
+- 🧠 **Simpler** - 1 workflow instead of many
+- ⚡ **Consistent** - All state updates atomic
+- 📊 **Single query** - Get entire hierarchy instantly
+
 ### Backend (FastAPI + Temporal)
 
 - **FastAPI** - Async REST API framework
-- **Temporal Python SDK** - Workflow query client
+- **Temporal Python SDK** - Workflow query client + status detection
 - **Pydantic** - Data validation and serialization
 - **JWT Authentication** - Stateless token-based auth
-- **Parallel Queries** - Async fan-out for fast hierarchy retrieval
+- **Workflow Status Detection** - Detects external termination/cancellation
 
 ### Frontend (React + Chakra UI)
 
@@ -271,22 +371,162 @@ Once the backend is running, visit:
 
 ### Example API Requests
 
+#### Using cURL
+
 **Login**:
 ```bash
 curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin@example.com&password=admin123"
+
+# Response:
+# {
+#   "access_token": "eyJhbGc...",
+#   "refresh_token": "eyJhbGc...",
+#   "token_type": "bearer",
+#   "expires_in": 1800
+# }
+```
+
+**Refresh Token**:
+```bash
+curl -X POST http://localhost:8000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "YOUR_REFRESH_TOKEN"}'
 ```
 
 **List Releases**:
 ```bash
-curl http://localhost:8000/api/releases \
+curl http://localhost:8000/api/releases?page=1&page_size=20 \
   -H "Authorization: Bearer YOUR_TOKEN"
+
+# Response:
+# {
+#   "items": [
+#     {
+#       "id": "release:rel-2025-01",
+#       "state": "in_progress",
+#       "workflow_id": "wf_release_2025_01",
+#       "wave_ids": ["wave:wave-1", "wave:wave-2"],
+#       "created_at": "2025-11-06T10:00:00Z",
+#       "updated_at": "2025-11-06T10:30:00Z"
+#     }
+#   ],
+#   "total": 10,
+#   "page": 1,
+#   "page_size": 20
+# }
 ```
 
 **Get Release Hierarchy**:
 ```bash
 curl http://localhost:8000/api/releases/release:rel-001/hierarchy \
   -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+#### Using Python
+
+```python
+import requests
+
+# 1. Login
+response = requests.post(
+    "http://localhost:8000/api/auth/login",
+    data={
+        "username": "admin@example.com",
+        "password": "admin123"
+    }
+)
+tokens = response.json()
+access_token = tokens["access_token"]
+
+# 2. List releases
+headers = {"Authorization": f"Bearer {access_token}"}
+releases = requests.get(
+    "http://localhost:8000/api/releases",
+    headers=headers,
+    params={"page": 1, "page_size": 20}
+).json()
+
+print(f"Found {releases['total']} releases")
+for release in releases['items']:
+    print(f"  - {release['id']}: {release['state']}")
+
+# 3. Get release hierarchy
+hierarchy = requests.get(
+    f"http://localhost:8000/api/releases/{releases['items'][0]['id']}/hierarchy",
+    headers=headers
+).json()
+
+print(f"Release has {len(hierarchy['waves'])} waves")
+```
+
+#### Using JavaScript/TypeScript
+
+```typescript
+// api-client.ts
+import axios from 'axios';
+
+const API_URL = 'http://localhost:8000/api';
+
+// 1. Login
+const login = async (email: string, password: string) => {
+  const formData = new URLSearchParams();
+  formData.append('username', email);
+  formData.append('password', password);
+
+  const response = await axios.post(`${API_URL}/auth/login`, formData);
+  const { access_token, refresh_token } = response.data;
+
+  // Store tokens
+  localStorage.setItem('access_token', access_token);
+  localStorage.setItem('refresh_token', refresh_token);
+
+  return response.data;
+};
+
+// 2. Create authenticated client
+const createAuthClient = () => {
+  const client = axios.create({ baseURL: API_URL });
+
+  client.interceptors.request.use((config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  });
+
+  return client;
+};
+
+// 3. List releases
+const listReleases = async (page = 1, pageSize = 20) => {
+  const client = createAuthClient();
+  const response = await client.get('/releases', {
+    params: { page, page_size: pageSize }
+  });
+  return response.data;
+};
+
+// 4. Get release hierarchy
+const getReleaseHierarchy = async (releaseId: string) => {
+  const client = createAuthClient();
+  const response = await client.get(`/releases/${releaseId}/hierarchy`);
+  return response.data;
+};
+
+// Usage
+(async () => {
+  await login('admin@example.com', 'admin123');
+  const releases = await listReleases();
+  console.log(`Found ${releases.total} releases`);
+
+  if (releases.items.length > 0) {
+    const hierarchy = await getReleaseHierarchy(releases.items[0].id);
+    console.log('Hierarchy:', hierarchy);
+  }
+})();
 ```
 
 ## Configuration
@@ -344,8 +584,52 @@ See detailed deployment guide in `specs/001-temporal-bff-system/quickstart.md`.
 5. Configure structured logging
 6. Set up monitoring and metrics
 
+## Entity States
+
+Entities progress through consistent states:
+
+| State | Color | Description |
+|-------|-------|-------------|
+| `pending` | 🟡 Yellow | Not started yet |
+| `in_progress` | 🔵 Blue | Release actively running |
+| `deploying` | 🔵 Cyan | Entity actively deploying |
+| `completed` | 🟢 Green | Successfully finished |
+| `failed` | 🔴 Red | Error occurred |
+| `terminated` | 🟠 Orange | Manually killed in Temporal UI |
+| `cancelled` | 🟣 Purple | Gracefully cancelled via signal |
+
+## Demo Scripts
+
+### Quick Testing (`create_test_releases.py`)
+Fast testing with 1s per app deployment (~10-30s total):
+```bash
+cd backend
+python create_test_releases.py
+```
+
+Creates 3 releases with unique timestamp IDs:
+- `release:rel-2025-01-YYYYMMDD-HHMMSS` (2 waves, ~17s)
+- `release:rel-2025-02-YYYYMMDD-HHMMSS` (3 waves, ~26s)
+- `release:rel-2024-12-YYYYMMDD-HHMMSS` (1 wave, ~6s)
+
+### Realistic Demo (`demo_releases.py`)
+Realistic deployments with different outcomes (1-5 minutes):
+```bash
+cd backend
+python demo_releases.py
+```
+
+Creates 3 concurrent releases:
+- **demo-1min-success**: ~30s, all apps succeed ✅
+- **demo-3min-failure**: ~90s, app-2 fails ❌
+- **demo-5min-cancelled**: Cancelled after 2.5 minutes 🛑
+
+See [REALISTIC_DEMO_GUIDE.md](REALISTIC_DEMO_GUIDE.md) for details.
+
 ## Documentation
 
+- **Testing Guide**: [TESTING.md](TESTING.md) - Complete testing instructions
+- **Demo Guide**: [REALISTIC_DEMO_GUIDE.md](REALISTIC_DEMO_GUIDE.md) - Realistic deployment scenarios
 - **Feature Spec**: [specs/001-temporal-bff-system/spec.md](specs/001-temporal-bff-system/spec.md)
 - **Implementation Plan**: [specs/001-temporal-bff-system/plan.md](specs/001-temporal-bff-system/plan.md)
 - **Data Model**: [specs/001-temporal-bff-system/data-model.md](specs/001-temporal-bff-system/data-model.md)

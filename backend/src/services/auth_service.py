@@ -11,7 +11,7 @@ import uuid
 import logging
 
 from ..models.auth import User, UserInDB, Token, TokenData
-from ..core.security import hash_password, verify_password, create_access_token
+from ..core.security import hash_password, verify_password, create_access_token, create_refresh_token, verify_refresh_token
 from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -109,13 +109,13 @@ class AuthService:
 
     def create_user_token(self, user: UserInDB) -> Token:
         """
-        Create JWT access token for authenticated user.
+        Create JWT access and refresh tokens for authenticated user.
 
         Args:
             user: Authenticated user
 
         Returns:
-            Token response with access_token, type, and expiration
+            Token response with access_token, refresh_token, type, and expiration
         """
         # Create token data
         token_data = {
@@ -128,13 +128,52 @@ class AuthService:
         expires_delta = timedelta(minutes=self.settings.jwt_expire_minutes)
         access_token = create_access_token(token_data, expires_delta)
 
-        logger.info(f"Created access token for user: {user.email}")
+        # Create refresh token (valid for 7 days)
+        refresh_token = create_refresh_token(token_data)
+
+        logger.info(f"Created access and refresh tokens for user: {user.email}")
 
         return Token(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             expires_in=self.settings.jwt_expire_minutes * 60,  # Convert to seconds
         )
+
+    def refresh_user_token(self, refresh_token: str) -> Token:
+        """
+        Create new access token from refresh token.
+
+        Args:
+            refresh_token: Valid refresh token
+
+        Returns:
+            New token response with access_token and refresh_token
+
+        Raises:
+            AuthenticationError: If refresh token is invalid
+        """
+        # Verify refresh token
+        payload = verify_refresh_token(refresh_token)
+        if payload is None:
+            logger.warning("Invalid or expired refresh token")
+            raise AuthenticationError("Invalid refresh token")
+
+        # Extract user email
+        email = payload.get("sub")
+        if email is None:
+            logger.warning("Refresh token missing 'sub' claim")
+            raise AuthenticationError("Invalid refresh token")
+
+        # Get user
+        user = self._users.get(email)
+        if not user or not user.is_active:
+            logger.warning(f"Refresh failed: user not found or inactive - {email}")
+            raise AuthenticationError("User not found or inactive")
+
+        # Create new tokens
+        logger.info(f"Refreshing tokens for user: {email}")
+        return self.create_user_token(user)
 
     def get_user_by_email(self, email: str) -> User:
         """

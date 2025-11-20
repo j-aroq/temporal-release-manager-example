@@ -5,11 +5,15 @@
  */
 
 import React from 'react';
-import { Box, Heading, Text, HStack, Button, Badge, Tooltip, IconButton } from '@chakra-ui/react';
+import { Box, Heading, Text, HStack, Button, Badge, Tooltip, IconButton, VStack } from '@chakra-ui/react';
 import { RepeatIcon } from '@chakra-ui/icons';
 import { Layout } from '../components/Layout';
 import { ReleaseList } from '../components/ReleaseList';
+import { ReleaseListSkeleton } from '../components/ReleaseListSkeleton';
+import { SearchFilter } from '../components/SearchFilter';
+import { ExportButtons } from '../components/ExportButtons';
 import { useReleases } from '../hooks/useReleases';
+import { useSearchFilter } from '../hooks/useSearchFilter';
 
 export const Dashboard: React.FC = () => {
   const {
@@ -25,10 +29,19 @@ export const Dashboard: React.FC = () => {
     toggleAutoRefresh,
   } = useReleases();
 
+  // Search and filter functionality
+  const {
+    searchTerm,
+    setSearchTerm,
+    stateFilter,
+    setStateFilter,
+    filteredReleases,
+  } = useSearchFilter(releases);
+
   return (
     <Layout>
-      <Box>
-        <Box mb={6}>
+      <VStack align="stretch" spacing={6}>
+        <Box>
           <HStack justify="space-between" align="start" mb={4}>
             <Box>
               <Heading size="lg" mb={2}>
@@ -39,6 +52,7 @@ export const Dashboard: React.FC = () => {
               </Text>
             </Box>
             <HStack spacing={2}>
+              <ExportButtons releases={filteredReleases} filename="temporal-releases" />
               <Tooltip label={isAutoRefreshEnabled ? 'Auto-refresh enabled (10s)' : 'Auto-refresh disabled'}>
                 <Button
                   size="sm"
@@ -69,17 +83,31 @@ export const Dashboard: React.FC = () => {
           )}
         </Box>
 
-        <ReleaseList
-          releases={releases}
-          total={total}
-          page={page}
-          pageSize={pageSize}
-          isLoading={isLoading}
-          error={error}
-          onRetry={refetch}
-          onPageChange={setPage}
+        {/* Search and Filter */}
+        <SearchFilter
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          stateFilter={stateFilter}
+          onStateFilterChange={setStateFilter}
         />
-      </Box>
+
+        {/* Show skeleton while loading */}
+        {isLoading && <ReleaseListSkeleton count={5} />}
+
+        {/* Show release list when not loading */}
+        {!isLoading && (
+          <ReleaseList
+            releases={filteredReleases}
+            total={filteredReleases.length}
+            page={page}
+            pageSize={pageSize}
+            isLoading={isLoading}
+            error={error}
+            onRetry={refetch}
+            onPageChange={setPage}
+          />
+        )}
+      </VStack>
     </Layout>
   );
 };

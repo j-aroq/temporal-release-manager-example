@@ -10,6 +10,7 @@ import logging
 
 from ..models.entities import Release, Wave, Cluster, Bundle, App, ReleaseHierarchy
 from .temporal_client import get_temporal_client, TemporalClientWrapper, WorkflowNotFoundError
+from ..core.cache import get_release_cache
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +36,13 @@ class EntityService:
             temporal_client: Temporal client wrapper instance
         """
         self.temporal_client = temporal_client
+        self.cache = get_release_cache()
 
     async def list_releases(
         self, page: int = 1, page_size: int = 20
     ) -> Dict[str, Any]:
         """
-        List all releases with pagination.
+        List all releases with pagination (with caching).
 
         Args:
             page: Page number (1-indexed)
@@ -53,16 +55,25 @@ class EntityService:
             Exception: If listing workflows fails
         """
         try:
-            # Query Temporal for all release workflows
-            # In real implementation, this would filter workflows by type
-            # For now, we list all workflows and filter by ID pattern
-            all_workflow_ids = await self.temporal_client.list_workflows(
-                query="",  # Empty query returns all workflows
-                max_results=1000,  # Get up to 1000 workflows
-            )
+            # Check cache first
+            cache_key = f"release_ids_all"
+            release_ids = self.cache.get(cache_key)
 
-            # Filter for release workflows (ID starts with 'release:')
-            release_ids = [wf_id for wf_id in all_workflow_ids if wf_id.startswith("release:")]
+            if release_ids is None:
+                # Query Temporal for all release workflows
+                # In real implementation, this would filter workflows by type
+                # For now, we list all workflows and filter by ID pattern
+                all_workflow_ids = await self.temporal_client.list_workflows(
+                    query="",  # Empty query returns all workflows
+                    max_results=1000,  # Get up to 1000 workflows
+                )
+
+                # Filter for release workflows (ID starts with 'release:')
+                release_ids = [wf_id for wf_id in all_workflow_ids if wf_id.startswith("release:")]
+
+                # Cache for 10 seconds
+                self.cache.set(cache_key, release_ids, ttl=10)
+                logger.debug(f"Cached {len(release_ids)} release IDs")
 
             # Calculate pagination
             total = len(release_ids)

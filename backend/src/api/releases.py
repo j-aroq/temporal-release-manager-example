@@ -14,6 +14,7 @@ from ..models.auth import User
 from ..models.entities import Release, ReleaseHierarchy
 from ..services.entity_service import get_entity_service, EntityService, EntityNotFoundError
 from ..core.validation import validate_entity_id_format, validate_pagination_params
+from ..core.errors import get_user_friendly_error
 from .auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ async def get_release(
         logger.warning(f"Release not found: {release_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release not found: {release_id}. It may have been completed or removed.",
+            detail=get_user_friendly_error("EntityNotFoundError"),
         )
 
     except HTTPException:
@@ -166,7 +167,7 @@ async def get_release_hierarchy(
         logger.warning(f"Release not found for hierarchy: {release_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Release not found: {release_id}. It may have been completed or removed.",
+            detail=get_user_friendly_error("EntityNotFoundError"),
         )
 
     except HTTPException:

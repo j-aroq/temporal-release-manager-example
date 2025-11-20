@@ -131,14 +131,15 @@ export const ReleaseList: React.FC<ReleaseListProps> = ({
           </Thead>
           <Tbody>
             {releases.map((release) => (
-              <Tr key={release.id} _hover={{ bg: 'gray.50' }}>
-                <Td>
+              <Tr key={release.id} _hover={{ bg: 'gray.50' }} role="row">
+                <Td role="cell">
                   <Link
                     as={RouterLink}
                     to={`/releases/${release.id}`}
                     color="blue.600"
                     fontWeight="medium"
                     _hover={{ textDecoration: 'underline' }}
+                    aria-label={`View details for ${release.id}`}
                   >
                     {release.id}
                   </Link>

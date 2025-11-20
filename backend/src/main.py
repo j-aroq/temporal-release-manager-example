@@ -13,11 +13,20 @@ from fastapi.responses import JSONResponse
 
 from .core.config import get_settings
 from .core.logging import setup_logging, get_logger
+from .core.env_validation import validate_environment, ConfigurationError
 from .services.temporal_client import get_temporal_client, close_temporal_client
 
 # Configure logging
 setup_logging()
 logger = get_logger(__name__)
+
+# Validate environment on import
+try:
+    validate_environment()
+except ConfigurationError as e:
+    logger.error(f"Configuration validation failed: {e}")
+    logger.error("Application cannot start with invalid configuration")
+    raise
 
 
 @asynccontextmanager
@@ -140,8 +149,9 @@ async def root() -> JSONResponse:
 
 
 # Import and include routers
-from .api import auth, releases, entities
+from .api import auth, releases, entities, metrics
 
 app.include_router(auth.router, prefix=settings.api_prefix, tags=["Authentication"])
 app.include_router(releases.router, prefix=settings.api_prefix, tags=["Releases"])
 app.include_router(entities.router, prefix=settings.api_prefix, tags=["Entities"])
+app.include_router(metrics.router, prefix=settings.api_prefix, tags=["Metrics & Observability"])
