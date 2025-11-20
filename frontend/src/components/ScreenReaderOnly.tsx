@@ -22,9 +22,11 @@ export const ScreenReaderOnly: React.FC<ScreenReaderOnlyProps> = ({ children, id
       padding="0"
       margin="-1px"
       overflow="hidden"
-      clip="rect(0, 0, 0, 0)"
       whiteSpace="nowrap"
       border="0"
+      sx={{
+        clip: 'rect(0, 0, 0, 0)',
+      }}
     >
       {children}
     </Box>

@@ -18,7 +18,6 @@ import { useSearchFilter } from '../hooks/useSearchFilter';
 export const Dashboard: React.FC = () => {
   const {
     releases,
-    total,
     page,
     pageSize,
     isLoading,
