@@ -13,19 +13,19 @@ from fastapi.responses import JSONResponse
 
 from .core.config import get_settings
 from .core.logging import setup_logging, get_logger
-from .core.env_validation import validate_environment, ConfigurationError
+from .core.env_validation import validate_settings
 from .services.temporal_client import get_temporal_client, close_temporal_client
 
 # Configure logging
 setup_logging()
 logger = get_logger(__name__)
 
-# Validate environment on import
+# Load and validate settings (loads .env file via Pydantic)
 try:
-    validate_environment()
-except ConfigurationError as e:
-    logger.error(f"Configuration validation failed: {e}")
-    logger.error("Application cannot start with invalid configuration")
+    settings = get_settings()
+    validate_settings(settings)
+except Exception as e:
+    logger.error(f"Configuration loading failed: {e}")
     raise
 
 
