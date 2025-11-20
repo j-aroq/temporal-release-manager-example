@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 # Create FastAPI application
-settings = get_settings()
+# settings already loaded above
 
 app = FastAPI(
     title="Temporal Release Management API",
